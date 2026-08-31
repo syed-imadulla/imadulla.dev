@@ -23,6 +23,48 @@ export function StickManGame() {
     const restartBtn = restartRef.current!;
     const jumpBtn    = jumpBtnRef.current;
 
+    // ── Global High Score Logic ───────────────────────────────────────────────
+    let hasSubmittedScore = false;
+    let globalHighScoreCache = 0;
+
+    async function fetchGlobalHighScore() {
+      try {
+        const res = await fetch('/api/highscore');
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.high_score === 'number') {
+            globalHighScoreCache = data.high_score;
+            enforceScoreBarDOM();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch global high score', err);
+      }
+    }
+
+    async function submitGlobalScore(score: number) {
+      if (score <= 0) return;
+      try {
+        const res = await fetch('/api/highscore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ score })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.high_score === 'number') {
+            globalHighScoreCache = Math.max(globalHighScoreCache, data.high_score);
+            enforceScoreBarDOM();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to submit global high score', err);
+      }
+    }
+
+    // Call fetch on mount
+    fetchGlobalHighScore();
+
     // ── Anti-Cheat Layer 1: DevTools Keyboard Shortcut Blocker ─────────────
     const preventDevToolsHotkeys = (e: KeyboardEvent) => {
       if (
@@ -128,7 +170,7 @@ export function StickManGame() {
       const currentScoreSpan = scoreBarEl.querySelector('.score-stat-card:not(.highlight) .stat-val');
       const currentHighSpan  = scoreBarEl.querySelector('.score-stat-card.highlight .stat-val');
       const curScore = getScore();
-      const curHigh  = getHighScore();
+      const curHigh  = Math.max(getHighScore(), globalHighScoreCache);
 
       if (!currentScoreSpan || !currentHighSpan || currentScoreSpan.tagName !== 'SPAN' || currentHighSpan.tagName !== 'SPAN') {
         scoreBarEl.innerHTML = `
@@ -234,6 +276,7 @@ export function StickManGame() {
 
     // ── Reset ────────────────────────────────────────────────────────────────
     function resetGame() {
+      hasSubmittedScore = false;
       phase = 'waiting';
       lastTimestamp = undefined;
       sceneOffset = 0;
@@ -344,6 +387,10 @@ export function StickManGame() {
             restartBtn.style.display = 'flex';
             if (jumpBtn) {
               jumpBtn.innerText = 'RESTART GAME';
+            }
+            if (!hasSubmittedScore) {
+              hasSubmittedScore = true;
+              submitGlobalScore(getScore());
             }
             return;
           }
