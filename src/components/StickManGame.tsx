@@ -9,6 +9,7 @@ export function StickManGame() {
   const scoreBarRef  = useRef<HTMLDivElement>(null);
   const introRef     = useRef<HTMLDivElement>(null);
   const perfectRef   = useRef<HTMLDivElement>(null);
+  const newHighScoreRef = useRef<HTMLDivElement>(null);
   const restartRef   = useRef<HTMLDivElement>(null);
   const jumpBtnRef   = useRef<HTMLButtonElement>(null);
 
@@ -20,12 +21,14 @@ export function StickManGame() {
     const scoreBarEl = scoreBarRef.current;
     const introEl   = introRef.current!;
     const perfectEl = perfectRef.current!;
+    const newHighScoreEl = newHighScoreRef.current;
     const restartBtn = restartRef.current!;
     const jumpBtn    = jumpBtnRef.current;
 
     // ── Global High Score Logic ───────────────────────────────────────────────
     let hasSubmittedScore = false;
     let globalHighScoreCache = 0;
+    let runStartHighScore = 0;
 
     async function fetchGlobalHighScore() {
       try {
@@ -277,6 +280,7 @@ export function StickManGame() {
     // ── Reset ────────────────────────────────────────────────────────────────
     function resetGame() {
       hasSubmittedScore = false;
+      runStartHighScore = Math.max(getHighScore(), globalHighScoreCache);
       phase = 'waiting';
       lastTimestamp = undefined;
       sceneOffset = 0;
@@ -285,6 +289,7 @@ export function StickManGame() {
 
       introEl.style.opacity  = '1';
       perfectEl.style.opacity = '0';
+      if (newHighScoreEl) newHighScoreEl.style.opacity = '0';
       restartBtn.style.display = 'none';
 
       if (jumpBtn) {
@@ -390,7 +395,17 @@ export function StickManGame() {
             }
             if (!hasSubmittedScore) {
               hasSubmittedScore = true;
-              submitGlobalScore(getScore());
+              const finalScore = getScore();
+              submitGlobalScore(finalScore);
+              
+              if (finalScore > Math.max(runStartHighScore, globalHighScoreCache) && finalScore > 0) {
+                if (newHighScoreEl) {
+                  newHighScoreEl.style.opacity = '1';
+                  setTimeout(() => {
+                    if (newHighScoreEl) newHighScoreEl.style.opacity = '0';
+                  }, 1000);
+                }
+              }
             }
             return;
           }
@@ -618,6 +633,11 @@ export function StickManGame() {
             {/* Perfect text */}
             <div ref={perfectRef} className="game-perfect-new">
               DOUBLE SCORE!
+            </div>
+
+            {/* New High Score text */}
+            <div ref={newHighScoreRef} className="game-perfect-new">
+              HIGH SCORE!
             </div>
 
             {/* Restart overlay text */}
