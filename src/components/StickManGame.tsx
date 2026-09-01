@@ -25,48 +25,26 @@ export function StickManGame() {
     const restartBtn = restartRef.current!;
     const jumpBtn    = jumpBtnRef.current;
 
-    // ── Global High Score Logic ───────────────────────────────────────────────
-    let hasSubmittedScore = false;
-    let globalHighScoreCache = 0;
+    // ── Personal High Score Logic ───────────────────────────────────────────────
+    let hasEndedGame = false;
     let runStartHighScore = 0;
 
-    async function fetchGlobalHighScore() {
+    function getPersonalHighScore(): number {
       try {
-        const res = await fetch('/api/highscore');
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data.high_score === 'number') {
-            globalHighScoreCache = data.high_score;
-            enforceScoreBarDOM();
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch global high score', err);
+        const stored = localStorage.getItem('stickman-high-score');
+        return stored ? parseInt(stored, 10) || 0 : 0;
+      } catch {
+        return 0;
       }
     }
 
-    async function submitGlobalScore(score: number) {
-      if (score <= 0) return;
+    function setPersonalHighScore(val: number) {
       try {
-        const res = await fetch('/api/highscore', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ score })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data.high_score === 'number') {
-            globalHighScoreCache = Math.max(globalHighScoreCache, data.high_score);
-            enforceScoreBarDOM();
-          }
-        }
+        localStorage.setItem('stickman-high-score', val.toString());
       } catch (err) {
-        console.error('Failed to submit global high score', err);
+        console.warn('Failed to save personal high score', err);
       }
     }
-
-    // Call fetch on mount
-    fetchGlobalHighScore();
 
     // ── Anti-Cheat Layer 1: DevTools Keyboard Shortcut Blocker ─────────────
     const preventDevToolsHotkeys = (e: KeyboardEvent) => {
@@ -80,46 +58,9 @@ export function StickManGame() {
     };
     window.addEventListener('keydown', preventDevToolsHotkeys);
 
-    // ── Anti-Cheat Layer 2: Device-Fingerprinted Salted Storage ───────────
-    const SECURE_SALT = 'CF9_GAME_SECURE_SALT_2026_x89a#';
-    const DEVICE_FINGERPRINT = typeof window !== 'undefined' ? (window.navigator.userAgent + screen.width) : 'CF9';
-
-    function computeChecksum(val: number): string {
-      const rawStr = `${val}:${SECURE_SALT}:${DEVICE_FINGERPRINT}:${val * 10007 + 91823}`;
-      let hash = 0;
-      for (let i = 0; i < rawStr.length; i++) {
-        hash = (hash << 5) - hash + rawStr.charCodeAt(i);
-        hash |= 0;
-      }
-      return Math.abs(hash).toString(36).toUpperCase();
-    }
-
-    function saveSecureHighScore(val: number) {
-      const checksum = computeChecksum(val);
-      const payload = btoa(JSON.stringify({ s: val, c: checksum }));
-      sessionStorage.setItem('codefury_game_highscore_v2', payload);
-    }
-
-    function loadSecureHighScore(): number {
-      try {
-        const raw = sessionStorage.getItem('codefury_game_highscore_v2');
-        if (!raw) return 0;
-        const { s, c } = JSON.parse(atob(raw));
-        if (typeof s !== 'number' || computeChecksum(s) !== c || s > 1000) {
-          sessionStorage.removeItem('codefury_game_highscore_v2');
-          return 0;
-        }
-        return s;
-      } catch {
-        return 0;
-      }
-    }
-
-    // ── Anti-Cheat Layer 3: In-Memory XOR Masking & Encrypted Variables ────
+    // ── Anti-Cheat Layer 3: In-Memory XOR Masking ────
     let _sMask = Math.floor(Math.random() * 0xffff) + 1;
     let _sEnc = 0 ^ _sMask;
-    let _hsMask = Math.floor(Math.random() * 0xffff) + 1;
-    let _hsEnc = loadSecureHighScore() ^ _hsMask;
 
     function getScore(): number {
       return _sEnc ^ _sMask;
@@ -128,15 +69,6 @@ export function StickManGame() {
     function setScore(val: number) {
       _sMask = Math.floor(Math.random() * 0xffff) + 1;
       _sEnc = val ^ _sMask;
-    }
-
-    function getHighScore(): number {
-      return _hsEnc ^ _hsMask;
-    }
-
-    function setHighScore(val: number) {
-      _hsMask = Math.floor(Math.random() * 0xffff) + 1;
-      _hsEnc = val ^ _hsMask;
     }
 
     // ── Anti-Cheat Layer 4: Physics & Timing Rate Limiter ───────────────────
@@ -154,11 +86,6 @@ export function StickManGame() {
       lastJumpTimestamp = now;
       const newScore = getScore() + pts;
       setScore(newScore);
-
-      if (newScore > getHighScore()) {
-        setHighScore(newScore);
-        saveSecureHighScore(newScore);
-      }
       enforceScoreBarDOM();
       return true;
     }
@@ -173,7 +100,7 @@ export function StickManGame() {
       const currentScoreSpan = scoreBarEl.querySelector('.score-stat-card:not(.highlight) .stat-val');
       const currentHighSpan  = scoreBarEl.querySelector('.score-stat-card.highlight .stat-val');
       const curScore = getScore();
-      const curHigh  = Math.max(getHighScore(), globalHighScoreCache);
+      const curHigh  = getPersonalHighScore();
 
       if (!currentScoreSpan || !currentHighSpan || currentScoreSpan.tagName !== 'SPAN' || currentHighSpan.tagName !== 'SPAN') {
         scoreBarEl.innerHTML = `
@@ -279,8 +206,8 @@ export function StickManGame() {
 
     // ── Reset ────────────────────────────────────────────────────────────────
     function resetGame() {
-      hasSubmittedScore = false;
-      runStartHighScore = Math.max(getHighScore(), globalHighScoreCache);
+      hasEndedGame = false;
+      runStartHighScore = getPersonalHighScore();
       phase = 'waiting';
       lastTimestamp = undefined;
       sceneOffset = 0;
@@ -393,12 +320,14 @@ export function StickManGame() {
             if (jumpBtn) {
               jumpBtn.innerText = 'RESTART GAME';
             }
-            if (!hasSubmittedScore) {
-              hasSubmittedScore = true;
+            if (!hasEndedGame) {
+              hasEndedGame = true;
               const finalScore = getScore();
-              submitGlobalScore(finalScore);
               
-              if (finalScore > Math.max(runStartHighScore, globalHighScoreCache) && finalScore > 0) {
+              if (finalScore > runStartHighScore) {
+                setPersonalHighScore(finalScore);
+                enforceScoreBarDOM();
+                
                 if (newHighScoreEl) {
                   newHighScoreEl.style.opacity = '1';
                   setTimeout(() => {
